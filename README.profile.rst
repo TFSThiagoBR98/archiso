@@ -10,6 +10,7 @@ An archiso profile consists of several configuration files and a directory for f
     |- airootfs/
     |- efiboot/
     |- syslinux/
+    |- pkglist/
     |- packages.arch
     |- pacman.conf
     \- profiledef.sh
@@ -49,17 +50,19 @@ The image file is constructed from some of the variables in **profiledef.sh**: `
 
   - `squashfs`: Create a squashfs image directly from the airootfs work directory
   - `ext4+squashfs`: Create an ext4 partition, copy the airootfs work directory to it and create a squashfs image from it
-* `airootfs_image_tool_options`: An array of options to pass to the tool to create the airootfs image. Currently only
-  `mksquashfs` is supported - see `mksquashfs --help` for all possible options (defaults to `('-comp' 'xz')`).
-  - `file_permissions`: An associative array that lists files and/or directories who need specific ownership or
+  - `erofs`: Create an EROFS image for the airootfs work directory
+* `airootfs_image_tool_options`: An array of options to pass to the tool to create the airootfs image. `mksquashfs` and
+  `mkfs.erofs` are supported. See `mksquashfs --help` or `mkfs.erofs --help` for all possible options (defaults to
+  `('-comp' 'xz')` for squashfs).
+* `file_permissions`: An associative array that lists files and/or directories who need specific ownership or
   permissions. The array's keys contain the path and the value is a colon separated list of owner UID, owner GID and
   access mode. E.g. `file_permissions=(["/etc/shadow"]="0:0:400")`.
 
-packages.arch
+pkglist/arch
 =============
 
 All packages to be installed into the environment of the image have to be listed in an architecture specific file (e.g.
-`packages.x86_64`), which resides top-level in the profile.
+`0001-base`), which resides in pkglist folder in the profile.
 
 Packages have to be listed one per line. Lines starting with a `#` and blank lines are ignored.
 
