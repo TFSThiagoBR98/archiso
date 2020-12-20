@@ -807,6 +807,8 @@ _get_pkgfiles() {
         local packages="$(realpath -- "${packagefile}")"
         local filename=$(basename -- "$packages")
 
+        echo "Loading packages from ${packages}"
+
         if [[ -e "${packages}" ]]; then
             declare -a pkgs
             mapfile -t pkgs < <(sed '/^[[:blank:]]*#.*/d;s/#.*//;/^[[:blank:]]*$/d' "${packages}")
@@ -1007,7 +1009,9 @@ _make_layer() {
 }
 
 _load_pkgs() {
-    for packagefile in "${!pkg_list[@]}"; do
+    sortPkgs=($(printf '%s\n' "${!pkg_list[@]}" | sort))
+    for packagefile in "${sortPkgs[@]}"; do
+        _msg_info "Install packages from from ${packagefile}"
         layer_packages=($(echo "${pkg_list[$packagefile]}" | tr ' ' '\n'))
         _make_layer _make_packages "$packagefile"
     done
