@@ -86,7 +86,7 @@ run_image() {
 
     qemu-system-x86_64 \
         -boot order=d,menu=on,reboot-timeout=5000 \
-        -m "size=3072,slots=0,maxmem=$((3072*1024*1024))" \
+        -m "size=8192,slots=0,maxmem=$((8192*1024*1024))" \
         -k en \
         -name archiso,process=archiso_0 \
         -device virtio-scsi-pci,id=scsi0 \
