@@ -169,8 +169,9 @@ _mkairootfs_squashfs() {
         airootfs_root_dir="${work_dir}/${arch}/airootfs/${layer_name}"
         [[ -e "${airootfs_root_dir}" ]] || _msg_error "The path '${airootfs_root_dir}' does not exist" 1
         install -d -m 0755 -- "${isofs_dir}/${install_dir}/${arch}"
-        local image_path="${isofs_dir}/${install_dir}/${arch}/${layer_name}.sfs"
-        if [[ -e "${image_path}.sha512" ]]; then
+        local image_name="${isofs_dir}/${install_dir}/${arch}/${layer_name}"
+        local image_path="${image_name}.sfs"
+        if [[ -e "${image_name}.sha512" ]]; then
             _msg_info "Creating SquashFS image for layer ${layer_name}, this may take some time..."
             _run_mksquashfs "${airootfs_root_dir}" "${image_path}"
         else
@@ -186,9 +187,10 @@ _mkairootfs_erofs() {
         airootfs_root_dir="${work_dir}/${arch}/airootfs/${layer_name}"
         [[ -e "${airootfs_root_dir}" ]] || _msg_error "The path '${airootfs_root_dir}' does not exist" 1
         install -d -m 0755 -- "${isofs_dir}/${install_dir}/${arch}"
-        local image_path="${isofs_dir}/${install_dir}/${arch}/${layer_name}.erofs"
+        local image_name="${isofs_dir}/${install_dir}/${arch}/${layer_name}"
+        local image_path="${image_name}.erofs"
         # Generate reproducible file system UUID from SOURCE_DATE_EPOCH
-        if [[ -e "${image_path}.sha512" ]]; then
+        if [[ -e "${image_name}.sha512" ]]; then
             fsuuid="$(uuidgen --sha1 --namespace 93a870ff-8565-4cf3-a67b-f47299271a96 --name "${SOURCE_DATE_EPOCH}_${layer_name}")"
             _msg_info "Creating EROFS image for layer ${layer_name}, this may take some time..."
             mkfs.erofs -U "${fsuuid}" "${airootfs_image_tool_options[@]}" -- "${image_path}" "${airootfs_root_dir}"
