@@ -63,20 +63,8 @@ _msg_error() {
     fi
 }
 
-_mount_airootfs() {
-    trap "_umount_airootfs" EXIT HUP INT TERM
-    install -d -m 0755 -- "${work_dir}/mnt/airootfs"
-    _msg_info "Mounting '${airootfs_dir}.img' on '${work_dir}/mnt/airootfs'..."
-    mount -- "${airootfs_dir}.img" "${work_dir}/mnt/airootfs"
-    _msg_info "Done!"
-}
-
-_umount_airootfs() {
-    _msg_info "Unmounting '${work_dir}/mnt/airootfs'..."
-    umount -d -- "${work_dir}/mnt/airootfs"
-    _msg_info "Done!"
-    rmdir -- "${work_dir}/mnt/airootfs"
-    trap - EXIT HUP INT TERM
+_isMounted() {
+    findmnt -rno SOURCE,TARGET "$1" >/dev/null;
 }
 
 # Show help usage, with an exit status.
@@ -164,8 +152,6 @@ _cleanup_airootfs() {
     _msg_info "Done!"
 }
 
-
-
 _run_mksquashfs() {
     # Set default mksquashfs options
     (( ${#airootfs_image_tool_options[@]} < 1 )) && airootfs_image_tool_options=('-comp' 'xz')
@@ -177,35 +163,6 @@ _run_mksquashfs() {
     fi
 }
 
-# Makes a ext4 filesystem inside a SquashFS from a source directory.
-_mkairootfs_ext4+squashfs() {
-    for layer_name in "${layers[@]}"; do
-        airootfs_root_dir="${work_dir}/${arch}/airootfs/${layer_name}"
-        [[ -e "${airootfs_root_dir}" ]] || _msg_error "The path '${airootfs_root_dir}' does not exist" 1
-
-        _msg_info "Creating ext4 image of 32 GiB for layer ${layer_name}..."
-        if [[ "${quiet}" == "y" ]]; then
-            mkfs.ext4 -q -O '^has_journal,^resize_inode' -E 'lazy_itable_init=0' -m 0 -F -- "${airootfs_root_dir}.img" 32G
-        else
-            mkfs.ext4 -O '^has_journal,^resize_inode' -E 'lazy_itable_init=0' -m 0 -F -- "${airootfs_root_dir}.img" 32G
-        fi
-        tune2fs -c 0 -i 0 -- "${airootfs_root_dir}.img" > /dev/null
-        _msg_info "Done!"
-        _mount_airootfs
-        _msg_info "Copying '${airootfs_root_dir}/' to '${work_dir}/mnt/airootfs/'..."
-        cp -aT -- "${airootfs_root_dir}/" "${work_dir}/mnt/airootfs/"
-        chown -- 0:0 "${work_dir}/mnt/airootfs/"
-        _msg_info "Done!"
-        _umount_airootfs
-        install -d -m 0755 -- "${isofs_dir}/${install_dir}/${arch}"
-        _msg_info "Creating SquashFS image for layer ${layer_name}, this may take some time..."
-        local image_path="${isofs_dir}/${install_dir}/${arch}/${layer_name}.sfs"
-        _run_mksquashfs "${airootfs_root_dir}.img"
-        _msg_info "Done!"
-        rm -- "${airootfs_root_dir}.img"
-    done
-}
-
 # Makes a SquashFS filesystem from a source directory.
 _mkairootfs_squashfs() {
     for layer_name in "${layers[@]}"; do
@@ -213,8 +170,12 @@ _mkairootfs_squashfs() {
         [[ -e "${airootfs_root_dir}" ]] || _msg_error "The path '${airootfs_root_dir}' does not exist" 1
         install -d -m 0755 -- "${isofs_dir}/${install_dir}/${arch}"
         local image_path="${isofs_dir}/${install_dir}/${arch}/${layer_name}.sfs"
-        _msg_info "Creating SquashFS image for layer ${layer_name}, this may take some time..."
-        _run_mksquashfs "${airootfs_root_dir}" "${image_path}"
+        if [[ -e "${image_path}.sha512" ]]; then
+            _msg_info "Creating SquashFS image for layer ${layer_name}, this may take some time..."
+            _run_mksquashfs "${airootfs_root_dir}" "${image_path}"
+        else
+            _msg_info "Image file already exist, skiping ${layer_name}"
+        fi
     done
 }
 
@@ -224,13 +185,16 @@ _mkairootfs_erofs() {
         local fsuuid
         airootfs_root_dir="${work_dir}/${arch}/airootfs/${layer_name}"
         [[ -e "${airootfs_root_dir}" ]] || _msg_error "The path '${airootfs_root_dir}' does not exist" 1
-
         install -d -m 0755 -- "${isofs_dir}/${install_dir}/${arch}"
         local image_path="${isofs_dir}/${install_dir}/${arch}/${layer_name}.erofs"
         # Generate reproducible file system UUID from SOURCE_DATE_EPOCH
-        fsuuid="$(uuidgen --sha1 --namespace 93a870ff-8565-4cf3-a67b-f47299271a96 --name "${SOURCE_DATE_EPOCH}_${layer_name}")"
-        _msg_info "Creating EROFS image for layer ${layer_name}, this may take some time..."
-        mkfs.erofs -U "${fsuuid}" "${airootfs_image_tool_options[@]}" -- "${image_path}" "${airootfs_root_dir}"
+        if [[ -e "${image_path}.sha512" ]]; then
+            fsuuid="$(uuidgen --sha1 --namespace 93a870ff-8565-4cf3-a67b-f47299271a96 --name "${SOURCE_DATE_EPOCH}_${layer_name}")"
+            _msg_info "Creating EROFS image for layer ${layer_name}, this may take some time..."
+            mkfs.erofs -U "${fsuuid}" "${airootfs_image_tool_options[@]}" -- "${image_path}" "${airootfs_root_dir}"
+        else
+            _msg_info "Image file already exist, skiping ${layer_name}"
+        fi
         _msg_info "Done!"
     done
 }
@@ -981,7 +945,10 @@ _make_layer() {
         local overlay_workdir="${work_dir}/${arch}/airootfs/work"
         rm -rdv $overlay_workdir || /bin/true
         [[ -d "${overlay_workdir}" ]] || install -d -- "${overlay_workdir}"
-        umount "$airootfs_dir" || /bin/true
+
+        if _isMounted "$airootfs_dir"; then
+            umount "$airootfs_dir"
+        fi
 
         airootfs_root_dir="${work_dir}/${arch}/airootfs/${layer_name}"
         rm -rdv "$airootfs_root_dir" || /bin/true
@@ -1005,7 +972,9 @@ _make_layer() {
         echo "${layer_name}" >> "${work_dir}/layers"
         touch "${work_dir}/build.${layer_name}"
     fi
-    umount "$airootfs_dir" || /bin/true
+    if _isMounted "$airootfs_dir"; then
+        umount "$airootfs_dir"
+    fi
 }
 
 _load_pkgs() {
